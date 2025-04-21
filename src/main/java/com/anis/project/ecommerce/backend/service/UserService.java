@@ -1,11 +1,14 @@
 package com.anis.project.ecommerce.backend.service;
 
+import com.anis.project.ecommerce.backend.api.model.LoginBody;
 import com.anis.project.ecommerce.backend.api.model.RegistrationBody;
 import com.anis.project.ecommerce.backend.exception.UserAlreadyExistsException;
 import com.anis.project.ecommerce.backend.model.LocalUser;
 import com.anis.project.ecommerce.backend.model.dao.LocalUserDAO;
 
 import org.springframework.stereotype.Service;
+
+import java.util.Optional;
 
 /**
  * Service for handling user actions.
@@ -15,13 +18,20 @@ public class UserService {
 
   /** The LocalUserDAO. */
   private LocalUserDAO localUserDAO;
+  private EncryptionService encryptionService;
+  private JWTService jwtService;
 
   /**
    * Constructor injected by spring.
+   *
    * @param localUserDAO
+   * @param encryptionService
+   * @param jwtService
    */
-  public UserService(LocalUserDAO localUserDAO) {
+  public UserService(LocalUserDAO localUserDAO, EncryptionService encryptionService, JWTService jwtService) {
     this.localUserDAO = localUserDAO;
+    this.encryptionService = encryptionService;
+    this.jwtService = jwtService;
   }
 
   /**
@@ -32,7 +42,7 @@ public class UserService {
    */
   public LocalUser registerUser(RegistrationBody registrationBody) throws UserAlreadyExistsException {
     if (localUserDAO.findByEmailIgnoreCase(registrationBody.getEmail()).isPresent()
-        || localUserDAO.findByUsernameIgnoreCase(registrationBody.getUsername()).isPresent()) {
+            || localUserDAO.findByUsernameIgnoreCase(registrationBody.getUsername()).isPresent()) {
       throw new UserAlreadyExistsException();
     }
     LocalUser user = new LocalUser();
@@ -40,9 +50,24 @@ public class UserService {
     user.setUsername(registrationBody.getUsername());
     user.setFirstName(registrationBody.getFirstName());
     user.setLastName(registrationBody.getLastName());
-    //TODO: Encrypt passwords!!
-    user.setPassword(registrationBody.getPassword());
+    user.setPassword(encryptionService.encryptPassword(registrationBody.getPassword()));
     return localUserDAO.save(user);
+  }
+
+  /**
+   * Logins in a user and provides an authentication token back.
+   * @param loginBody The login request.
+   * @return The authentication token. Null if the request was invalid.
+   */
+  public String loginUser(LoginBody loginBody) {
+    Optional<LocalUser> opUser = localUserDAO.findByUsernameIgnoreCase(loginBody.getUsername());
+    if (opUser.isPresent()) {
+      LocalUser user = opUser.get();
+      if (encryptionService.verifyPassword(loginBody.getPassword(), user.getPassword())) {
+        return jwtService.generateJWT(user);
+      }
+    }
+    return null;
   }
 
 }
